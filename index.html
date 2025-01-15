@@ -1,255 +1,141 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Интерактивная карта</title>
+  <title>Карта с маркерами</title>
+  <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-database.js"></script>
   <style>
     body {
       font-family: Arial, sans-serif;
       margin: 0;
       padding: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
     }
+
     #map {
-      height: 500px;
+      height: 600px;
       width: 100%;
     }
+
     .controls {
+      margin: 10px;
       display: flex;
-      flex-wrap: wrap;
-      justify-content: space-between;
       gap: 10px;
-      width: 90%;
-      max-width: 1200px;
-      margin: 20px 0;
-      padding: 10px;
-      background-color: #f9f9f9;
-      border: 1px solid #ddd;
-      border-radius: 5px;
+      align-items: center;
     }
-    .controls label {
-      font-weight: bold;
-    }
-    .controls input,
-    .controls select,
-    .controls button {
-      padding: 10px;
-      font-size: 1rem;
-      border: 1px solid #ccc;
-      border-radius: 5px;
-      outline: none;
-    }
-    .controls button {
-      background-color: #007bff;
-      color: white;
-      cursor: pointer;
-      transition: background-color 0.3s ease;
-    }
-    .controls button:hover {
-      background-color: #0056b3;
-    }
-    @media (max-width: 600px) {
-      .controls {
-        flex-direction: column;
-      }
+
+    .controls input, .controls button {
+      padding: 8px;
+      font-size: 14px;
     }
   </style>
 </head>
 <body>
-  <h1>Интерактивная карта</h1>
-
+  <h1>Карта с маркерами</h1>
+  <div id="map"></div>
   <div class="controls">
-    <div>
-      <label for="categoryFilter">Фильтр по категории:</label>
-      <select id="categoryFilter">
-        <option value="all">Все</option>
-        <option value="power">Электростанции</option>
-        <option value="minerals">Минералы</option>
-        <option value="other">Прочее</option>
-      </select>
-    </div>
-    <div>
-      <label for="title">Название:</label>
-      <input type="text" id="title" placeholder="Введите название">
-    </div>
-    <div>
-      <label for="description">Описание:</label>
-      <input type="text" id="description" placeholder="Введите описание">
-    </div>
-    <div>
-      <label for="category">Категория:</label>
-      <select id="category">
-        <option value="power">Электростанции</option>
-        <option value="minerals">Минералы</option>
-        <option value="other">Прочее</option>
-      </select>
-    </div>
-    <div>
-      <button id="addPlace">Добавить место</button>
-      <button id="editPlace">Редактировать место</button>
-      <button id="deletePlace">Удалить место</button>
-      <button id="clearPlaces">Очистить все</button>
-    </div>
+    <input type="text" id="title" placeholder="Название">
+    <input type="text" id="description" placeholder="Описание">
+    <button id="addMarker">Добавить маркер</button>
   </div>
 
-  <div id="map"></div>
-
-  <script
-    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCiUWumGJwyRG-QBNuGOnci1v2A7o8qJZM&callback=initMap"
-    defer
-  ></script>
   <script>
-    let map;
-    let selectedLocation = null;
-    const markers = [];
-    const icons = {
-      power: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png",
-      minerals: "https://maps.google.com/mapfiles/ms/icons/green-dot.png",
-      other: "https://maps.google.com/mapfiles/ms/icons/red-dot.png",
+    // Firebase configuration
+    const firebaseConfig = {
+      apiKey: "ваш-apiKey",
+      authDomain: "ваш-authDomain",
+      databaseURL: "ваш-databaseURL",
+      projectId: "ваш-projectId",
+      storageBucket: "ваш-storageBucket",
+      messagingSenderId: "ваш-messagingSenderId",
+      appId: "ваш-appId"
     };
 
-    let markersData = JSON.parse(localStorage.getItem("markersData")) || [];
-    let selectedMarker = null;
+    // Initialize Firebase
+    const app = firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // Initialize map
+    let map;
+    const markers = {};
 
     function initMap() {
-      const center = { lat: 41.433678, lng: 75.983283 };
+      const center = { lat: 41.43367823564242, lng: 75.9832829034765 };
 
       map = new google.maps.Map(document.getElementById("map"), {
         center: center,
         zoom: 10,
-        draggableCursor: 'crosshair',
-        draggingCursor: 'grabbing',
       });
 
-      renderMarkers();
+      // Load existing markers
+      loadMarkers();
 
-      document.getElementById("categoryFilter").addEventListener("change", (e) => {
-        const selectedCategory = e.target.value;
-        markers.forEach((marker) => {
-          if (selectedCategory === "all" || marker.category === selectedCategory) {
-            marker.setMap(map);
-          } else {
-            marker.setMap(null);
-          }
-        });
+      // Add marker on map click
+      map.addListener("click", (e) => {
+        const lat = e.latLng.lat();
+        const lng = e.latLng.lng();
+        addMarker({ lat, lng });
       });
-
-      map.addListener("click", (event) => {
-        selectedLocation = event.latLng;
-        alert(`Выбрано местоположение: ${selectedLocation.lat()}, ${selectedLocation.lng()}`);
-      });
-
-      document.getElementById("addPlace").addEventListener("click", addMarker);
-      document.getElementById("editPlace").addEventListener("click", editMarker);
-      document.getElementById("deletePlace").addEventListener("click", deleteMarker);
-      document.getElementById("clearPlaces").addEventListener("click", clearAllMarkers);
     }
 
-    function addMarker() {
+    // Add marker to map and Firebase
+    function addMarker(data) {
+      const id = Date.now();
+      const marker = new google.maps.Marker({
+        position: { lat: data.lat, lng: data.lng },
+        map,
+        title: data.title || "Маркер",
+      });
+
+      const infoWindow = new google.maps.InfoWindow({
+        content: `<h3>${data.title || "Без названия"}</h3><p>${data.description || "Нет описания"}</p>`,
+      });
+
+      marker.addListener("click", () => {
+        infoWindow.open(map, marker);
+      });
+
+      markers[id] = marker;
+
+      // Save to Firebase
+      saveMarker({ id, ...data });
+    }
+
+    // Save marker to Firebase
+    function saveMarker(marker) {
+      firebase.database().ref("markers/" + marker.id).set(marker);
+    }
+
+    // Load markers from Firebase
+    function loadMarkers() {
+      firebase.database().ref("markers").on("value", (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          Object.values(data).forEach((marker) => {
+            addMarker(marker);
+          });
+        }
+      });
+    }
+
+    // Add marker from form
+    document.getElementById("addMarker").addEventListener("click", () => {
       const title = document.getElementById("title").value;
       const description = document.getElementById("description").value;
-      const category = document.getElementById("category").value;
 
-      if (title && description && selectedLocation && category) {
-        const newMarker = {
-          id: markersData.length + 1,
-          title,
-          description,
-          lat: selectedLocation.lat(),
-          lng: selectedLocation.lng(),
-          category,
-        };
-
-        markersData.push(newMarker);
-        localStorage.setItem("markersData", JSON.stringify(markersData));
-        renderMarkers();
-        alert("Место успешно добавлено!");
-      } else {
-        alert("Пожалуйста, заполните все поля и выберите местоположение на карте!");
-      }
-    }
-
-    function editMarker() {
-      if (!selectedMarker) {
-        alert("Выберите маркер для редактирования!");
-        return;
-      }
-
-      const title = document.getElementById("title").value;
-      const description = document.getElementById("description").value;
-      const category = document.getElementById("category").value;
-
-      if (title && description && category) {
-        selectedMarker.title = title;
-        selectedMarker.description = description;
-        selectedMarker.category = category;
-
-        markersData = markersData.map((marker) =>
-          marker.id === selectedMarker.id ? selectedMarker : marker
-        );
-
-        localStorage.setItem("markersData", JSON.stringify(markersData));
-        renderMarkers();
-        alert("Место успешно отредактировано!");
-      } else {
-        alert("Заполните все поля для редактирования!");
-      }
-    }
-
-    function deleteMarker() {
-      if (!selectedMarker) {
-        alert("Выберите маркер для удаления!");
-        return;
-      }
-
-      markersData = markersData.filter((marker) => marker.id !== selectedMarker.id);
-      localStorage.setItem("markersData", JSON.stringify(markersData));
-      renderMarkers();
-      alert("Место успешно удалено!");
-    }
-
-    function clearAllMarkers() {
-      if (confirm("Вы уверены, что хотите удалить все места?")) {
-        markersData = [];
-        localStorage.removeItem("markersData");
-        renderMarkers();
-        alert("Все места удалены!");
-      }
-    }
-
-    function renderMarkers() {
-      markers.forEach((marker) => marker.setMap(null));
-      markers.length = 0;
-
-      markersData.forEach((markerData) => {
-        const marker = new google.maps.Marker({
-          position: { lat: markerData.lat, lng: markerData.lng },
-          map: map,
-          title: markerData.title,
-          icon: icons[markerData.category],
-        });
-
-        const infoWindow = new google.maps.InfoWindow({
-          content: `<h3>${markerData.title}</h3><p>${markerData.description}</p>`,
-        });
-
-        marker.addListener("click", () => {
-          selectedMarker = markerData;
-          infoWindow.open(map, marker);
-          document.getElementById("title").value = markerData.title;
-          document.getElementById("description").value = markerData.description;
-          document.getElementById("category").value = markerData.category;
-        });
-
-        marker.category = markerData.category;
-        markers.push(marker);
+      map.addListener("click", (e) => {
+        const lat = e.latLng.lat();
+        const lng = e.latLng.lng();
+        addMarker({ lat, lng, title, description });
       });
-    }
+    });
 
-    window.initMap = initMap;
+    // Google Maps API
+    const script = document.createElement("script");
+    script.src = `https://maps.googleapis.com/maps/api/js?key=ВАШ_GOOGLE_MAPS_API_KEY&callback=initMap`;
+    script.defer = true;
+    document.head.appendChild(script);
   </script>
 </body>
 </html>
